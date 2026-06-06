@@ -1,6 +1,6 @@
 ---
 name: md-to-feishu
-description: Publish local Markdown files as polished Feishu/Lark Docx documents. Use when the user asks to sync, upload, publish, or convert Markdown/MD files to Feishu docs, especially when the document contains tables, code blocks, images, videos, attachments, HTML snippets, or Mermaid/flowchart code.
+description: Publish local Markdown files as polished Feishu/Lark Docx documents. Use when the user asks to sync, upload, publish, or convert Markdown/MD files to Feishu docs, including Chinese requests such as "把 Markdown 同步到飞书", "发布 MD 到飞书", "上传本地 Markdown 文档到飞书", or "把文档放到飞书". Especially useful when the document contains tables, code blocks, images, videos, attachments, HTML snippets, or Mermaid/flowchart code.
 ---
 
 # MD To Feishu
@@ -45,6 +45,8 @@ The script looks for credentials in this order:
 - `FEISHU_APP_ID` plus `FEISHU_APP_SECRET`
 
 If no folder token is passed, it uses `FEISHU_FOLDER_TOKEN` when present.
+
+Publishing requires user-provided Feishu/Lark authorization. This skill never includes credentials and never assumes the user is already authorized. If authorization is missing or insufficient, report the Feishu API error and stop.
 
 ## Publishing Rules
 

@@ -15,3 +15,6 @@ jobs:
           node-version: "22"
       - run: npm run check
       - run: npm run inspect -- --file examples/smoke.md
+      - run: node scripts/install-skill.mjs --force
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home

@@ -26,10 +26,11 @@
     "md-to-feishu": "scripts/md-to-feishu.mjs"
   },
   "scripts": {
+    "install-skill": "node scripts/install-skill.mjs",
     "inspect": "node scripts/md-to-feishu.mjs inspect",
     "publish": "node scripts/md-to-feishu.mjs publish",
     "create-folder": "node scripts/md-to-feishu.mjs create-folder",
-    "check": "node --check scripts/md-to-feishu.mjs && node --check scripts/lib/feishu-doc-publisher.mjs"
+    "check": "node --check scripts/md-to-feishu.mjs && node --check scripts/install-skill.mjs && node --check scripts/lib/feishu-doc-publisher.mjs"
   },
   "engines": {
     "node": ">=18"

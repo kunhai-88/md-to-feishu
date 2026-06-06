@@ -1,31 +1,78 @@
 # MD to Feishu
 
+[中文文档](README.zh-CN.md)
+
 Codex skill and zero-dependency Node.js CLI for publishing local Markdown files as Feishu/Lark Docx documents.
 
 It is designed for technical and research documents that contain tables, code blocks, images, videos, attachments, HTML snippets, and Mermaid source blocks.
 
-## Features
+## What It Does
 
-- Convert Markdown into Feishu Docx blocks.
-- Reuse the same Feishu document with a stable `--key`.
-- Convert Markdown/HTML tables into readable field-list blocks.
-- Preserve rich text styles for bold, italic, external links, and inline code.
-- Preserve code fences as Feishu code blocks and set language metadata when available.
-- Upload local or remote images as Feishu image blocks.
-- Upload videos and attachments as Feishu file blocks.
-- Strip YAML frontmatter from the published body.
-- Dry-run with `inspect` before writing to Feishu.
+- Converts Markdown into Feishu/Lark Docx blocks.
+- Reuses the same Feishu document with a stable `--key`.
+- Converts Markdown/HTML tables into readable field-list blocks.
+- Preserves rich text styles for bold, italic, external links, and inline code.
+- Preserves code fences as Feishu code blocks and sets language metadata when available.
+- Uploads local or remote images as Feishu image blocks.
+- Uploads videos and attachments as Feishu file blocks.
+- Strips YAML frontmatter from the published body.
+- Supports dry-run inspection before writing to Feishu.
 
 ## Install As A Codex Skill
 
-Clone or copy this repository into your Codex skills directory:
+This repository is itself a Codex skill. Install it into your Codex skills directory.
+
+macOS / Linux:
 
 ```bash
-mkdir -p ~/.codex/skills
-git clone https://github.com/kunhai-88/md-to-feishu.git ~/.codex/skills/md-to-feishu
+git clone https://github.com/kunhai-88/md-to-feishu.git
+cd md-to-feishu
+npm run install-skill
 ```
 
-Then ask Codex to publish a Markdown file to Feishu. The skill metadata in `SKILL.md` should trigger automatically for Markdown-to-Feishu requests.
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/kunhai-88/md-to-feishu.git
+cd md-to-feishu
+npm run install-skill
+```
+
+The installer copies the skill to:
+
+```text
+$CODEX_HOME/skills/md-to-feishu
+```
+
+If `CODEX_HOME` is not set, it uses:
+
+```text
+<home>/.codex/skills/md-to-feishu
+```
+
+After installation, restart Codex or start a new Codex session. Then ask Codex to publish a Markdown file to Feishu.
+
+## Authorization Required
+
+Yes. Publishing to Feishu requires user-provided Feishu/Lark authorization.
+
+This project does not include credentials, does not create a Feishu app for you, and does not store tokens in the repository. It only reads credentials from your local environment.
+
+The CLI checks credentials in this order:
+
+1. `FEISHU_OAUTH_CREDENTIALS_PATH`
+2. `$HOME/.feishu-user-plugin/credentials.json`
+3. `FEISHU_APP_ID` and `FEISHU_APP_SECRET`
+
+If `--folder-token` is omitted, `FEISHU_FOLDER_TOKEN` is used when present.
+
+Minimum practical permissions depend on your Feishu app or OAuth setup. The publishing flow needs permission to:
+
+- create/read/update Feishu Docx documents
+- create folders when using `create-folder`
+- upload media for images, videos, and attachments
+
+If authorization is missing or insufficient, the CLI fails with a Feishu API error instead of silently skipping writes.
 
 ## CLI Usage
 
@@ -38,7 +85,7 @@ node scripts/md-to-feishu.mjs inspect --file examples/smoke.md
 Create a Feishu folder:
 
 ```bash
-node scripts/md-to-feishu.mjs create-folder --name "Markdown 文档库"
+node scripts/md-to-feishu.mjs create-folder --name "Markdown Docs"
 ```
 
 Publish a document:
@@ -52,16 +99,6 @@ node scripts/md-to-feishu.mjs publish \
   --skip-review-check \
   --force
 ```
-
-## Credentials
-
-The CLI checks credentials in this order:
-
-1. `FEISHU_OAUTH_CREDENTIALS_PATH`
-2. `$HOME/.feishu-user-plugin/credentials.json`
-3. `FEISHU_APP_ID` and `FEISHU_APP_SECRET`
-
-If `--folder-token` is omitted, `FEISHU_FOLDER_TOKEN` is used when present.
 
 ## Output State
 
@@ -78,9 +115,16 @@ Use a stable `--key` to update the same Feishu document on later runs. Use `--st
 - Tables are converted to `表格内容：` plus bullet field rows for reliable readability.
 - Code block languages are mapped to Feishu `code.style.language` when supported.
 - `mermaid` is stored as a Markdown-language code block because Feishu has no Mermaid language enum.
-- Images become docx image blocks.
-- Videos and attachments become docx file blocks.
+- Images become Docx image blocks.
+- Videos and attachments become Docx file blocks.
 - Frontmatter is stripped.
+
+## Cross-Platform Notes
+
+- Requires Node.js 18 or newer.
+- Uses only Node.js standard library APIs.
+- Works on macOS, Linux, and Windows when Git, Node.js, Codex, and Feishu credentials are available.
+- The installer uses `$CODEX_HOME` when set and otherwise resolves the user home directory via Node.js.
 
 ## Limitations
 
