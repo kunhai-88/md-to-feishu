@@ -1,0 +1,37 @@
+{
+  "name": "md-to-feishu-skill",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Codex skill and CLI for publishing Markdown as polished Feishu/Lark Docx documents.",
+  "license": "MIT",
+  "author": "Kunhai Yang",
+  "keywords": [
+    "codex-skill",
+    "feishu",
+    "lark",
+    "markdown",
+    "docx",
+    "publishing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kunhai-88/md-to-feishu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kunhai-88/md-to-feishu/issues"
+  },
+  "homepage": "https://github.com/kunhai-88/md-to-feishu#readme",
+  "bin": {
+    "md-to-feishu": "scripts/md-to-feishu.mjs"
+  },
+  "scripts": {
+    "inspect": "node scripts/md-to-feishu.mjs inspect",
+    "publish": "node scripts/md-to-feishu.mjs publish",
+    "create-folder": "node scripts/md-to-feishu.mjs create-folder",
+    "check": "node --check scripts/md-to-feishu.mjs && node --check scripts/lib/feishu-doc-publisher.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

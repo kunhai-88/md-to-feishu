@@ -1,0 +1,4 @@
+interface:
+  display_name: "MD to Feishu"
+  short_description: "Publish Markdown as polished Feishu Docs"
+  default_prompt: "Publish this local Markdown file to a Feishu document with tables, code blocks, images, and attachments handled cleanly."
