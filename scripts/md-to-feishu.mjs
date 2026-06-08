@@ -24,7 +24,7 @@ async function run(name, options) {
       statePath: options.state,
       credentialsPath: options.credentialsPath,
       profileName: options.profile,
-      tableMode: options.tableMode || "readable",
+      tableMode: options.tableMode || "native",
       mediaMode: options.mediaMode || "upload",
       dryRun: Boolean(options.dryRun),
       force: Boolean(options.force),
@@ -50,7 +50,7 @@ async function run(name, options) {
     const markdown = fs.readFileSync(file, "utf8");
     const blocks = markdownToBlocks(markdown, {
       sourceDir: path.dirname(file),
-      tableMode: options.tableMode || "readable",
+      tableMode: options.tableMode || "native",
       mediaMode: options.mediaMode || "upload"
     });
     return {

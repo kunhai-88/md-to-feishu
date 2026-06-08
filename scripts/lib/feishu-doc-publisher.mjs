@@ -6,8 +6,9 @@ const BASE_URL = "https://open.feishu.cn/open-apis";
 const DEFAULT_OAUTH_CREDENTIALS_PATH = path.join(process.env.HOME || ".", ".feishu-user-plugin", "credentials.json");
 const DEFAULT_STATE_PATH = ".md-to-feishu/feishu-doc-state.json";
 const DEFAULT_AGENT_RUNS_PATH = ".md-to-feishu/agent-runs.jsonl";
-const RENDERER_VERSION = "md-to-feishu-v2-rich-inline-media";
+const RENDERER_VERSION = "md-to-feishu-v3-native-table";
 const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+const TABLE_PLACEHOLDER_PREFIX = "@@FEISHU_TABLE_BLOCK_";
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".webm"]);
 const ATTACHMENT_EXTENSIONS = new Set([
@@ -158,11 +159,13 @@ export async function createFolder({ name, folderToken = "", credentialsPath, pr
 
 export function markdownToBlocks(markdown, options = {}) {
   const prepared = normalizeMarkdownForFeishu(markdown, options);
+  const preparedText = typeof prepared === "string" ? prepared : prepared.text;
+  const preparedTables = typeof prepared === "string" ? [] : prepared.tables || [];
   const blocks = [];
   let codeFence = null;
   let codeLines = [];
 
-  for (const rawLine of prepared.split(/\r?\n/)) {
+  for (const rawLine of preparedText.split(/\r?\n/)) {
     const line = rawLine.trimEnd();
     const fence = line.match(/^```([A-Za-z0-9_-]*)\s*$/);
     if (fence) {
@@ -181,6 +184,15 @@ export function markdownToBlocks(markdown, options = {}) {
       continue;
     }
     if (!line.trim()) continue;
+
+    const tablePlaceholder = line.trim().match(/^@@FEISHU_TABLE_BLOCK_(\d+)@@$/);
+    if (tablePlaceholder) {
+      const table = preparedTables[Number(tablePlaceholder[1])];
+      if (table?.rows?.length) {
+        blocks.push({ table });
+        continue;
+      }
+    }
 
     const media = parseMarkdownMediaLine(line, options.sourceDir || process.cwd());
     if (media) {
@@ -205,9 +217,10 @@ export function markdownToBlocks(markdown, options = {}) {
 export function normalizeMarkdownForFeishu(markdown, options = {}) {
   const withoutFrontmatter = stripFrontmatter(markdown);
   const fenced = protectFencedCode(withoutFrontmatter);
-  const htmlConverted = restoreFencedCode(htmlToMarkdown(fenced.text), fenced.blocks);
-  const tableMode = options.tableMode || "readable";
-  const convertedTables = tableMode === "preserve" ? htmlConverted : convertMarkdownTables(htmlConverted);
+  const tableMode = options.tableMode || "native";
+  const tables = [];
+  const htmlConverted = restoreFencedCode(htmlToMarkdown(fenced.text, { tableMode, tables }), fenced.blocks);
+  const convertedTables = tableMode === "preserve" ? htmlConverted : convertMarkdownTables(htmlConverted, { tableMode, tables });
   const lines = [];
   let inCode = false;
 
@@ -228,17 +241,26 @@ export function normalizeMarkdownForFeishu(markdown, options = {}) {
       .replace(/^\s*>\s?/, "> ");
     lines.push(line);
   }
-  return lines.join("\n").replace(/\n{4,}/g, "\n\n\n").trim();
+  return {
+    text: lines.join("\n").replace(/\n{4,}/g, "\n\n\n").trim(),
+    tables
+  };
 }
 
-export function htmlToMarkdown(input) {
+export function htmlToMarkdown(input, options = {}) {
   let text = String(input || "")
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<div[^>]*class="[^"]*\bmermaid\b[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, (_, body) => {
       return `\n\n\`\`\`mermaid\n${decodeHtml(stripTags(body)).trim()}\n\`\`\`\n\n`;
     })
-    .replace(/<table[\s\S]*?<\/table>/gi, (table) => `\n\n${htmlTableToReadableMarkdown(table)}\n\n`)
+    .replace(/<table[\s\S]*?<\/table>/gi, (table) => {
+      const tableData = parseHtmlTable(table);
+      if (options.tableMode === "native" && tableData?.rows?.length) {
+        return `\n\n${registerTablePlaceholder(tableData, options.tables || [])}\n\n`;
+      }
+      return `\n\n${htmlTableToReadableMarkdown(table)}\n\n`;
+    })
     .replace(/<\/(h1|h2|h3|p|li|tr|table|section|div)>/gi, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<h1[^>]*>/gi, "\n# ")
@@ -277,12 +299,14 @@ async function writeBlocks({ token, documentId, blocks }) {
   let textBatch = [];
 
   for (const block of blocks) {
-    if (block.media) {
+    if (block.media || block.table) {
       if (textBatch.length) {
         blocksAdded += await writeTextBlockBatch({ token, documentId, blocks: textBatch });
         textBatch = [];
       }
-      const result = await insertMediaBlock({ token, documentId, media: block.media });
+      const result = block.table
+        ? await insertTableBlock({ token, documentId, table: block.table })
+        : await insertMediaBlock({ token, documentId, media: block.media });
       blocksAdded += result.blocks_added;
       imagesUploaded += result.images_uploaded;
       filesUploaded += result.files_uploaded;
@@ -309,6 +333,51 @@ async function insertMediaBlock({ token, documentId, media }) {
   }
   await insertFileBlock({ token, documentId, media });
   return { blocks_added: 1, images_uploaded: 0, files_uploaded: 1 };
+}
+
+async function insertTableBlock({ token, documentId, table }) {
+  const rows = normalizeTableRows(table.rows);
+  if (!rows.length || !rows[0].length) {
+    return { blocks_added: 0, images_uploaded: 0, files_uploaded: 0 };
+  }
+
+  const columnSize = Math.max(...rows.map((row) => row.length));
+  const paddedRows = rows.map((row) => padRow(row, columnSize));
+  const created = await createChildBlock({
+    token,
+    documentId,
+    child: {
+      block_type: 31,
+      table: {
+        property: {
+          row_size: paddedRows.length,
+          column_size: columnSize
+        }
+      }
+    }
+  });
+  const cellIds = created.children || created.table?.cells || [];
+  if (cellIds.length !== paddedRows.length * columnSize) {
+    throw new Error(`Feishu table creation returned ${cellIds.length} cells, expected ${paddedRows.length * columnSize}.`);
+  }
+
+  let insertedChildren = 1;
+  for (let rowIndex = 0; rowIndex < paddedRows.length; rowIndex += 1) {
+    const row = paddedRows[rowIndex];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      const cellId = cellIds[rowIndex * columnSize + columnIndex];
+      const text = row[columnIndex] || " ";
+      await createChildBlock({
+        token,
+        documentId,
+        parentBlockId: cellId,
+        child: textBlock(2, "text", text)
+      });
+      insertedChildren += 1;
+    }
+  }
+
+  return { blocks_added: insertedChildren, images_uploaded: 0, files_uploaded: 0 };
 }
 
 async function writeTextBlockBatch({ token, documentId, blocks }) {
@@ -387,8 +456,8 @@ async function insertFileBlock({ token, documentId, media }) {
   });
 }
 
-async function createChildBlock({ token, documentId, child }) {
-  const created = await feishuFetch(`/docx/v1/documents/${documentId}/blocks/${documentId}/children`, {
+async function createChildBlock({ token, documentId, parentBlockId = documentId, child }) {
+  const created = await feishuFetch(`/docx/v1/documents/${documentId}/blocks/${parentBlockId}/children`, {
     method: "POST",
     token,
     body: JSON.stringify({ children: [child] })
@@ -411,28 +480,56 @@ async function uploadMedia({ token, file, parentType, parentNode }) {
     throw new Error(`Feishu media upload_all limit is 20MB; ${file.fileName} is ${file.size} bytes. Use multipart media upload before publishing this file.`);
   }
 
-  const form = new FormData();
-  form.append("file_name", file.fileName);
-  form.append("parent_type", parentType);
-  form.append("parent_node", parentNode);
-  form.append("size", String(file.size));
-  form.append("file", new Blob([file.buffer], { type: file.contentType }), file.fileName);
+  let lastError = null;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const form = new FormData();
+    form.append("file_name", file.fileName);
+    form.append("parent_type", parentType);
+    form.append("parent_node", parentNode);
+    form.append("size", String(file.size));
+    form.append("file", new Blob([file.buffer], { type: file.contentType }), file.fileName);
 
-  const response = await fetch(`${BASE_URL}/drive/v1/medias/upload_all`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`
-    },
-    body: form,
-    signal: AbortSignal.timeout(90000)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.code !== 0) {
-    throw new Error(`media upload failed: ${payload.msg || response.status}`);
+    let response;
+    let payload = {};
+    try {
+      response = await fetch(`${BASE_URL}/drive/v1/medias/upload_all`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`
+        },
+        body: form,
+        signal: AbortSignal.timeout(90000)
+      });
+      payload = await response.json().catch(() => ({}));
+    } catch (error) {
+      lastError = error;
+      if (attempt < 4) {
+        await sleep(1000 * attempt);
+        continue;
+      }
+      throw new Error(`media upload failed after ${attempt} attempts: ${error.message || error}`);
+    }
+
+    if (!response.ok || payload.code !== 0) {
+      const message = payload.msg || response.status;
+      lastError = new Error(`media upload failed: ${message}`);
+      if (attempt < 4 && isRetriableMediaUploadFailure(response.status)) {
+        await sleep(1000 * attempt);
+        continue;
+      }
+      throw lastError;
+    }
+
+    const fileToken = payload.data?.file_token;
+    if (!fileToken) throw new Error("media upload did not return file_token");
+    return fileToken;
   }
-  const fileToken = payload.data?.file_token;
-  if (!fileToken) throw new Error("media upload did not return file_token");
-  return fileToken;
+
+  throw lastError || new Error("media upload failed");
+}
+
+function isRetriableMediaUploadFailure(status) {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
 async function readMedia(media) {
@@ -520,22 +617,25 @@ async function createDocument({ token, title, folderToken }) {
 }
 
 async function clearDocumentContent({ token, documentId }) {
-  const list = await feishuFetch(`/docx/v1/documents/${documentId}/blocks?page_size=500`, {
-    method: "GET",
-    token
-  });
-  const children = (list.data?.items || []).filter((block) => block.parent_id === documentId && block.block_type !== 1);
-  if (!children.length) return 0;
-  await feishuFetch(`/docx/v1/documents/${documentId}/blocks/${documentId}/children/batch_delete`, {
-    method: "DELETE",
-    token,
-    body: JSON.stringify({
-      start_index: 0,
-      end_index: children.length
-    })
-  });
-  await sleep(350);
-  return children.length;
+  let deleted = 0;
+  while (true) {
+    const list = await feishuFetch(`/docx/v1/documents/${documentId}/blocks?page_size=500`, {
+      method: "GET",
+      token
+    });
+    const children = (list.data?.items || []).filter((block) => block.parent_id === documentId && block.block_type !== 1);
+    if (!children.length) return deleted;
+    await feishuFetch(`/docx/v1/documents/${documentId}/blocks/${documentId}/children/batch_delete`, {
+      method: "DELETE",
+      token,
+      body: JSON.stringify({
+        start_index: 0,
+        end_index: children.length
+      })
+    });
+    deleted += children.length;
+    await sleep(350);
+  }
 }
 
 async function feishuFetch(apiPath, options = {}) {
@@ -558,17 +658,22 @@ async function feishuFetch(apiPath, options = {}) {
   return payload;
 }
 
-function convertMarkdownTables(markdown) {
+function convertMarkdownTables(markdown, options = {}) {
   const lines = markdown.split(/\r?\n/);
   const out = [];
   for (let index = 0; index < lines.length;) {
-    if (isMarkdownTableLine(lines[index]) && isMarkdownTableLine(lines[index + 1] || "")) {
+    if (isMarkdownTableLine(lines[index]) && isMarkdownTableSeparator(lines[index + 1] || "")) {
       const block = [];
       while (index < lines.length && isMarkdownTableLine(lines[index])) {
         block.push(lines[index]);
         index += 1;
       }
-      out.push(...markdownTableToReadableLines(block));
+      const tableRows = parseMarkdownTable(block);
+      if (options.tableMode === "native" && tableRows?.rows?.length) {
+        out.push("", registerTablePlaceholder(tableRows, options.tables || []), "");
+      } else {
+        out.push(...markdownTableToReadableLines(block));
+      }
       continue;
     }
     out.push(lines[index]);
@@ -578,9 +683,8 @@ function convertMarkdownTables(markdown) {
 }
 
 function markdownTableToReadableLines(block) {
-  const rows = block
-    .map(splitMarkdownTableRow)
-    .filter((row) => row.length && !row.every((cell) => /^:?-{2,}:?$/.test(cell.trim())));
+  const parsed = parseMarkdownTable(block);
+  const rows = parsed.rows;
   if (!rows.length) return [];
   const [headers, ...bodyRows] = rows;
   const useHeaders = bodyRows.length > 0 && headers.length > 1;
@@ -601,13 +705,8 @@ function markdownTableToReadableLines(block) {
 }
 
 function htmlTableToReadableMarkdown(tableHtml) {
-  const rows = [...tableHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)]
-    .map((match) => {
-      return [...match[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
-        .map((cell) => cleanInline(stripTags(cell[1])))
-        .filter(Boolean);
-    })
-    .filter((row) => row.length);
+  const parsed = parseHtmlTable(tableHtml);
+  const rows = parsed.rows;
   if (!rows.length) return "";
   const [headers, ...bodyRows] = rows;
   const useHeaders = bodyRows.length && headers.length > 1;
@@ -658,6 +757,11 @@ function isMarkdownTableLine(line) {
   return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.includes("|", 1);
 }
 
+function isMarkdownTableSeparator(line) {
+  const row = splitMarkdownTableRow(line);
+  return row.length > 0 && row.every((cell) => /^:?-{2,}:?$/.test(cell.trim()));
+}
+
 function splitMarkdownTableRow(line) {
   return line
     .trim()
@@ -665,6 +769,44 @@ function splitMarkdownTableRow(line) {
     .replace(/\|$/, "")
     .split("|")
     .map((cell) => cell.trim());
+}
+
+function parseMarkdownTable(block) {
+  return {
+    rows: block
+      .map(splitMarkdownTableRow)
+      .filter((row) => row.length && !row.every((cell) => /^:?-{2,}:?$/.test(cell.trim())))
+      .map((row) => row.map(cleanInline))
+      .filter((row) => row.some(Boolean))
+  };
+}
+
+function parseHtmlTable(tableHtml) {
+  return {
+    rows: [...String(tableHtml || "").matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)]
+      .map((match) => {
+        return [...match[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+          .map((cell) => cleanInline(stripTags(cell[1])));
+      })
+      .filter((row) => row.length && row.some((cell) => cell !== ""))
+  };
+}
+
+function registerTablePlaceholder(table, tables) {
+  const index = tables.push(table) - 1;
+  return `${TABLE_PLACEHOLDER_PREFIX}${index}@@`;
+}
+
+function normalizeTableRows(rows) {
+  return (rows || [])
+    .map((row) => row.map((cell) => cleanInline(cell || "")))
+    .filter((row) => row.length && row.some((cell) => cell !== ""));
+}
+
+function padRow(row, width) {
+  const next = row.slice(0, width);
+  while (next.length < width) next.push("");
+  return next;
 }
 
 function cleanInline(value) {

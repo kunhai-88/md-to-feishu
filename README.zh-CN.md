@@ -10,7 +10,8 @@
 
 - 把 Markdown 转成飞书/Lark Docx blocks。
 - 通过稳定的 `--key` 复用同一个飞书文档，重复发布时更新原文档。
-- 把 Markdown/HTML 表格转成可读的字段列表，避免飞书里管道表格错乱。
+- 把标准 Markdown/HTML 表格转成飞书原生 table block。
+- 如果表格无法安全转换，会回退成可读字段列表，避免发布失败。
 - 保留加粗、斜体、外部链接、内联代码等飞书富文本样式。
 - 把代码块转成飞书 code block，并尽量写入代码语言。
 - 把本地或远程图片上传成飞书图片 block。
@@ -112,7 +113,8 @@ node scripts/md-to-feishu.mjs publish \
 
 ## 渲染规则
 
-- 表格会转成 `表格内容：` 加字段行，优先保证飞书阅读稳定。
+- 标准 Markdown/HTML 表格会优先转成飞书原生 table block，让列宽自然展开。
+- 如果表格无法安全转换，会回退成 `表格内容：` 加字段行。
 - 代码块语言会映射到飞书 `code.style.language`。
 - `mermaid` 会作为 Markdown 语言的代码块保存，因为飞书没有 Mermaid 专用语言枚举。
 - 图片会变成 Docx image block。
@@ -129,7 +131,7 @@ node scripts/md-to-feishu.mjs publish \
 ## 限制
 
 - 单个文件超过 20MB 暂不支持，因为需要飞书分片上传。
-- 还没有实现飞书原生 table block。
+- 复杂合并表格目前仍会回退成可读文本行。
 - Mermaid 目前不会渲染成图片，只保留源码代码块。
 - 深层嵌套列表、任务复选框、脚注、数学公式、MDX 组件不保证完整还原。
 

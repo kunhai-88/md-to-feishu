@@ -58,7 +58,8 @@ Publishing requires user-provided Feishu/Lark authorization. This skill never in
 ## Supported Rendering
 
 - Headings, paragraphs, quotes, bullets, and ordered lists become Feishu text blocks.
-- Markdown tables and HTML tables become readable field-list blocks headed by `表格内容：`.
+- Standard Markdown tables and HTML tables become native Feishu table blocks.
+- If a table cannot be converted safely, it falls back to readable field-list blocks headed by `表格内容：`.
 - Bold, italic, external links, and inline code become Feishu rich text styles.
 - Code fences become Feishu code blocks with language metadata when Markdown specifies a known language.
 - Mermaid fences are kept as Markdown-language code blocks because Feishu has no Mermaid code language.
@@ -70,7 +71,7 @@ Publishing requires user-provided Feishu/Lark authorization. This skill never in
 ## Limits
 
 - Single media upload uses Feishu `drive/v1/medias/upload_all`; files over 20MB fail until multipart upload support is added.
-- Tables optimize for readability, not native Feishu table blocks.
+- Complex merged tables may still fall back to readable text rows.
 - Mermaid is not rendered into an image.
 - Deeply nested lists, task checkboxes, footnotes, math, and MDX components are not fully supported.
 

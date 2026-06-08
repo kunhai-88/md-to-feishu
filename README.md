@@ -10,7 +10,8 @@ It is designed for technical and research documents that contain tables, code bl
 
 - Converts Markdown into Feishu/Lark Docx blocks.
 - Reuses the same Feishu document with a stable `--key`.
-- Converts Markdown/HTML tables into readable field-list blocks.
+- Converts standard Markdown/HTML tables into native Feishu table blocks.
+- Falls back to readable field-list blocks when a table cannot be safely converted.
 - Preserves rich text styles for bold, italic, external links, and inline code.
 - Preserves code fences as Feishu code blocks and sets language metadata when available.
 - Uploads local or remote images as Feishu image blocks.
@@ -112,7 +113,8 @@ Use a stable `--key` to update the same Feishu document on later runs. Use `--st
 
 ## Rendering Rules
 
-- Tables are converted to `表格内容：` plus bullet field rows for reliable readability.
+- Standard Markdown/HTML tables are converted to native Feishu table blocks so columns can expand naturally.
+- If a table cannot be converted safely, it falls back to `表格内容：` plus bullet field rows.
 - Code block languages are mapped to Feishu `code.style.language` when supported.
 - `mermaid` is stored as a Markdown-language code block because Feishu has no Mermaid language enum.
 - Images become Docx image blocks.
@@ -129,7 +131,7 @@ Use a stable `--key` to update the same Feishu document on later runs. Use `--st
 ## Limitations
 
 - Files over 20MB are not supported yet because they require Feishu multipart upload.
-- Native Feishu table blocks are not implemented.
+- Complex merged tables still fall back to readable text rows.
 - Mermaid is not rendered to an image.
 - Deep nesting, task checkboxes, footnotes, math, and MDX are not fully supported.
 
